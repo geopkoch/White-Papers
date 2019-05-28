@@ -53,9 +53,9 @@ do.cohen.d(mydata %>% filter(isWFrst == 1) %>% select(isNRAfterFirst),
 t.test(isWFrst ~ isNRAfterFirst, data = mydata) #difference in means
 
 
-# with an odds ratio of .12, we can say the odds of having a net registration after W in first course are about 1 to 8, or VERY SMALL.
-# in other words, you are about 88% less likely to have a subsequent net registration if you have a W in first grad course.
-# additionally, having a W in a first course has a LARGE effect and is statistically significant on the student's likelihood to net register
+# with an odds ratio of X, we can say the odds of having a net registration after W in first course are about 1 to (1/X).
+# in other words, you are about (1-X)% less likely to have a subsequent net registration if you have a W in first grad course.
+# additionally, having a W in a first course has a negligible/small/medium/large effect and is/is not statistically significant on the student's likelihood to net register
 
 #test this for each school
 model.schools <- mydata %>%
@@ -67,7 +67,7 @@ model.schools <- mydata %>%
 model.schools %>% filter(term == "isWFrst") %>% select(1,3) %>%
   mutate(odds.ratio = exp(estimate))
 
-#NO SIGNIF DIFF BETWEEN SCHOOLS
+#SIGNIF DIFF BETWEEN SCHOOLS?
 
 
 #now to determine if a W has an impact on number of net registrations in the first year afterward
