@@ -1,0 +1,464 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(out.width='750px', dpi=200,echo = TRUE)
+```
+
+```{r main_code, echo=FALSE, message=FALSE}
+library(pacman)
+p_load(tidytext,dplyr,tidyr,topicmodels,ggplot2,readr,stringr,knitr)
+
+stopwords.sentimentremoved <- anti_join(stop_words,get_sentiments("afinn")) 
+
+tokenize <- function(df, column){
+  libraries <- c("dplyr","magrittr","tidytext")
+  lapply(libraries, require, character.only=TRUE)
+  df <- df %>%
+    unnest_tokens_("word",column) %>%
+    mutate(Question = column) %>%
+    anti_join(stopwords.sentimentremoved, by = "word") %>%
+    #filter(!str_detect(word,"[0-9]")) %>%
+    filter(!str_detect(word,"[[:punct:]]")) %>%
+    mutate(word_stem = SnowballC::wordStem(word))
+  df
+}
+
+Calidata <- read.csv("P:/APUS_Corporate/Institutional Research/Data Team/Projects/Cali Morrison Topic Modeling/Copy of OpenEndedAnonymized 5-24-17.csv")
+Calidata[,3:8] <- sapply(Calidata[,3:8],as.character)
+
+Calidata.SchoolCounts <- Calidata %>%
+  group_by(Inst.ID) %>%
+  count(RespondentID) %>%
+  rename("Institution ID" = Inst.ID) %>%
+  summarize("Count of Respondents" = sum(n)) 
+
+data.specificreason <- Calidata %>%
+  select(2,3) %>%
+  rename(SpecificReason = Was.there.anything.specific.that.made.you.decide.you.wanted.to.go.to.or.return.to.college.before.you.enrolled.in.your.competency.based.education.program.) %>%
+  tokenize("SpecificReason") %>%
+  mutate(Question = "SpecificReason")
+
+data.BeginSearch <- Calidata %>%
+  select(2,4) %>%
+  rename(BeginSearch = Where.did.you.begin.your.search.to.start.or.return.to.college.) %>%
+  tokenize("BeginSearch") %>%
+  mutate(Question = "BeginSearch")
+
+data.TypeofInformation <- Calidata %>%
+  select(2,5) %>%
+  rename(TypeofInformation = What.type.s..of.information.did.you.look.for.in.this.process.) %>%
+  tokenize("TypeofInformation") %>%
+  mutate(Question = "TypeofInformation")
+
+data.ProgramChoice <- Calidata %>%
+  select(2,7) %>%
+  rename(ProgramChoice = Please.share.why.you.chose.the.program.you.are.currently.enrolled.in.) %>%
+  tokenize("ProgramChoice") %>%
+  mutate(Question = "ProgramChoice")
+
+data.HelpfulSkills <- Calidata %>%
+  select(2,8) %>%
+  rename(HelpfulSkills = Which.of.your.skills.or.experience.were.most.helpful.in.preparing.you.for.this.educational.experience..Explain..) %>%
+  tokenize("HelpfulSkills") %>%
+  mutate(Question = "HelpfulSkills")
+
+data.WhoInvolved <- Calidata %>%
+  select(2,6) %>%
+  rename(WhoInvolved = Who..if.anyone..was.involved.in.this.search.process.with.you.) %>%
+  tokenize("WhoInvolved") %>%
+  mutate(Question = "WhoInvolved")
+
+Calidata.tokenized <- rbind(data.specificreason,data.BeginSearch,data.TypeofInformation,data.ProgramChoice,data.HelpfulSkills,data.WhoInvolved)
+rm(data.BeginSearch,data.HelpfulSkills,data.ProgramChoice,data.specificreason,data.TypeofInformation,data.WhoInvolved)
+
+Calidata.wordcounts <- Calidata.tokenized %>%
+  group_by(Question) %>%
+  count(word) %>%
+  rename("Question Type" = Question) %>%
+  summarize("Count of Words" = sum(n)) 
+
+Calidata.respondents <- Calidata.tokenized %>%
+  group_by(Question) %>%
+  rename("Question Type" = Question) %>%
+  summarize("Count of Respondents" = n_distinct(RespondentID)) 
+
+Calidata.table <- left_join(Calidata.respondents,Calidata.wordcounts)
+
+words.tdm.SpecificReason <- cast_tdm(Calidata.tokenized %>%
+                        count(Question,word_stem,sort=TRUE)%>%
+                        ungroup() %>%
+                        filter(Question=="SpecificReason") %>%
+                        na.omit()
+                        #filter(!word %in% c("instructor","class","students"))
+                        ,Question,word_stem,n)
+
+wordslda.SpecificReason <- LDA(words.tdm.SpecificReason,k = 10,control = list(seed = 1))
+Calidatatopics.SpecificReason <- tidy(wordslda.SpecificReason,matrix = "beta") #convert topic model results to dataframe
+
+Calidatatopics.SpecificReason <- Calidatatopics.SpecificReason %>%
+  group_by(topic) %>%
+  top_n(15,beta) %>%
+  ungroup() %>%
+  arrange(topic,-beta)
+
+words.tdm.BeginSearch <- cast_tdm(Calidata.tokenized %>%
+                                       count(Question,word_stem,sort=TRUE)%>%
+                                       ungroup() %>%
+                                       filter(Question=="BeginSearch") %>%
+                                       na.omit()
+                                     #filter(!word %in% c("instructor","class","students"))
+                                     ,Question,word_stem,n)
+
+wordslda.BeginSearch <- LDA(words.tdm.BeginSearch,k = 10,control = list(seed = 1))
+Calidatatopics.BeginSearch <- tidy(wordslda.BeginSearch,matrix = "beta") #convert topic model results to dataframe
+
+Calidatatopics.BeginSearch <- Calidatatopics.BeginSearch %>%
+  group_by(topic) %>%
+  top_n(15,beta) %>%
+  ungroup() %>%
+  arrange(topic,-beta)
+
+words.tdm.HelpfulSkills <- cast_tdm(Calidata.tokenized %>%
+                                       count(Question,word_stem,sort=TRUE)%>%
+                                       ungroup() %>%
+                                       filter(Question=="HelpfulSkills") %>%
+                                       na.omit()
+                                     #filter(!word %in% c("instructor","class","students"))
+                                     ,Question,word_stem,n)
+
+wordslda.HelpfulSkills <- LDA(words.tdm.HelpfulSkills,k = 10,control = list(seed = 1))
+Calidatatopics.HelpfulSkills <- tidy(wordslda.HelpfulSkills,matrix = "beta") #convert topic model results to dataframe
+
+Calidatatopics.HelpfulSkills <- Calidatatopics.HelpfulSkills %>%
+  group_by(topic) %>%
+  top_n(15,beta) %>%
+  ungroup() %>%
+  arrange(topic,-beta)
+
+words.tdm.ProgramChoice <- cast_tdm(Calidata.tokenized %>%
+                                       count(Question,word_stem,sort=TRUE)%>%
+                                       ungroup() %>%
+                                       filter(Question=="ProgramChoice") %>%
+                                       na.omit()
+                                     #filter(!word %in% c("instructor","class","students"))
+                                     ,Question,word_stem,n)
+
+wordslda.ProgramChoice <- LDA(words.tdm.ProgramChoice,k = 10,control = list(seed = 1))
+Calidatatopics.ProgramChoice <- tidy(wordslda.ProgramChoice,matrix = "beta") #convert topic model results to dataframe
+
+Calidatatopics.ProgramChoice <- Calidatatopics.ProgramChoice %>%
+  group_by(topic) %>%
+  top_n(15,beta) %>%
+  ungroup() %>%
+  arrange(topic,-beta)
+
+words.tdm.TypeofInformation <- cast_tdm(Calidata.tokenized %>%
+                                       count(Question,word_stem,sort=TRUE)%>%
+                                       ungroup() %>%
+                                       filter(Question=="TypeofInformation") %>%
+                                       na.omit()
+                                     #filter(!word %in% c("instructor","class","students"))
+                                     ,Question,word_stem,n)
+
+wordslda.TypeofInformation <- LDA(words.tdm.TypeofInformation,k = 10,control = list(seed = 1))
+Calidatatopics.TypeofInformation <- tidy(wordslda.TypeofInformation,matrix = "beta") #convert topic model results to dataframe
+
+Calidatatopics.TypeofInformation <- Calidatatopics.TypeofInformation %>%
+  group_by(topic) %>%
+  top_n(15,beta) %>%
+  ungroup() %>%
+  arrange(topic,-beta)
+
+words.tdm.WhoInvolved <- cast_tdm(Calidata.tokenized %>%
+                                          count(Question,word_stem,sort=TRUE)%>%
+                                          ungroup() %>%
+                                          filter(Question=="WhoInvolved") %>%
+                                          na.omit()
+                                        #filter(!word %in% c("instructor","class","students"))
+                                        ,Question,word_stem,n)
+
+wordslda.WhoInvolved <- LDA(words.tdm.WhoInvolved,k = 10,control = list(seed = 1))
+Calidatatopics.WhoInvolved <- tidy(wordslda.WhoInvolved,matrix = "beta") #convert topic model results to dataframe
+
+Calidatatopics.WhoInvolved <- Calidatatopics.WhoInvolved %>%
+  group_by(topic) %>%
+  top_n(15,beta) %>%
+  ungroup() %>%
+  arrange(topic,-beta)
+
+```
+# Finding Topics in the CBE Survey Results
+*Authored by Geoff Koch on 6/12/2017*  
+
+Manually coding survey results is an accurate way to quantify the topics mentioned by respondents. This method works best with few open-ended responses and is not appropriate or efficient for large volumes of data. An alternative to manually coding a large number of open ended responses is topic modeling. The results of this analysis utilized a Latent Dirichlet Allocation (LDA) algorithm to derive underlying topics within each question asked. The effectiveness of LDA increases proportionally with the amount of data available. LDA also operates under two assumptions, as explained by Julia Silge and David Robinson in their book, [Text Mining with R](http://tidytextmining.com/topicmodeling.html):
+
+* **Every document is a mixture of topics.** We imagine that each document may contain words from several topics in particular proportions. For example, in a two-topic model we could say "Document 1 is 90% topic A and 10% topic B, while Document 2 is 30% topic A and 70% topic B."
+* **Every topic is a mixture of words.** For example, we could imagine a two-topic model of American news, with one topic for "politics" and one for "entertainment." The most common words in the politics topic might be "President", "Congress", and "government", while the entertainment topic may be made up of words such as "movies", "television", and "actor". Importantly, words can be shared between topics; a word like "budget" might appear in both equally.  
+
+**** 
+###Methodology  
+  
+  
+The data set being analyzed consisted of 8 variables: Institution ID, Respondent ID, and 6 questions each respondent could answer. Initially, the topics would be broken down by overall topics per question and then topics per institution and question to explore the possiblity of different topics at each institution. Table 1 breaks down the number of respondents per institution.  
+
+
+```{r schoolcounts, echo=FALSE, results = 'asis'}
+#found this width HTML function online - works well
+html_table_width <- function(kable_output, width){
+  width_html <- paste0(paste0('<col width="', width, '">'), collapse = "\n")
+  sub("<table>", paste0("<table>\n", width_html), kable_output)
+}
+kable(Calidata.SchoolCounts,format="html",caption = "Table 1",align = "l") %>%
+  html_table_width(150)
+```  
+<br>
+As we see in Table 1, the low number of responses for every institution except Institution 4 prevents us from grouping the analysis by institution. Therefore, we must only show topics derived from the entire data set for each question.  
+  
+In order to properly run the LDA algorithm, we must tokenize the text for each question. The custom **tokenize** function below does this.
+
+```{r tokenizefunction, eval=FALSE}
+tokenize <- function(df, column, sentiment.type = "afinn", sentimentremoved = "stopwords.sentimentremoved"){
+  if (!require("pacman")) install.packages("pacman")
+  p_load(dplyr,magrittr,tidytext,SnowballC)
+  if(exists(sentimentremoved)) 
+    sentimentremoved
+  else stopwords.sentimentremoved<- anti_join(stop_words,get_sentiments(sentiment.type))
+  df <- df %>%
+    unnest_tokens_("word",column) %>%
+    mutate(Question = column) %>%
+    anti_join(stopwords.sentimentremoved, by = "word") %>%
+    filter(!str_detect(word,"[0-9]")) %>%
+    filter(!str_detect(word,"[[:punct:]]")) %>%
+    mutate(word_stem = wordStem(word))
+  df
+}
+```
+  
+  
+The function first creates one record per word for each response and then groups each word to the corresponding question. Then, we remove stopwords that do not correlate to words in the "afinn" sentiment lexicon while also removing punctuation from the words. Normally, I would remove numbers during this process as well. However, leaving numbers in sometimes allows us to better mine our text data to see common occurrences of specific numbers. Lastly, the function returns the root word of our words in the form of stemming.  
+    
+Prior to running the algorithm, a look at our updated counts should be done. Table 2 displays both the count of responses and the count of words for each question type. The actual questions have been abbreviated for the sake of brevity within the Question Type field. 
+ 
+```{r wordcounts, echo=FALSE, results = 'asis' }
+html_table_width <- function(kable_output, width){
+  width_html <- paste0(paste0('<col width="', width, '">'), collapse = "\n")
+  sub("<table>", paste0("<table>\n", width_html), kable_output)
+}
+kable(Calidata.table,format="html",caption = "Table 2", align ="l") %>%
+  html_table_width(200)  
+```  
+<br>
+  
+There are a fair amount of words involved with each question type with the exception of WhoInvolved. The topics derived from the WhoInvolved question type may not be entirely accurate given the relatively low number of words and responses. 
+
+Prior to processing this algorithm, we must determine the number of topics we think may be present in each question. This analysis looks at five topics the algorithm can find and will display the top fifteen terms based on the beta value each is given in the underlying topic. This beta value is merely how closely each word in the selected topic corresponds to the topic itself.  
+
+*For instance, if words like money, savings, checking, and loan had high beta values in a topic, we could conclude the topic relates to banking.*  
+<br>
+
+****  
+###Analysis  
+  
+After allowing the algorithm to process, we are given results in the form of a dataframe. To better understand these results, we plot the top fifteen terms, as ranked by the beta value, for each of our five topics within the question types.
+
+The first plot focuses on the question *Was there anything specific that made you decide you wanted to go to or return to college before you enrolled in your competency-based education program?*.
+
+```{r specificreason, echo=FALSE,fig.height=11, fig.width=8 }
+
+words.tdm.SpecificReason <- cast_tdm(Calidata.tokenized %>%
+                        count(Question,word_stem,sort=TRUE)%>%
+                        ungroup() %>%
+                        filter(Question=="SpecificReason") %>%
+                        na.omit()
+                        #filter(!word %in% c("instructor","class","students"))
+                        ,Question,word_stem,n)
+
+wordslda.SpecificReason <- LDA(words.tdm.SpecificReason,k = 5,control = list(seed = 1))
+Calidatatopics.SpecificReason <- tidy(wordslda.SpecificReason,matrix = "beta") #convert topic model results to dataframe
+
+Calidatatopics.SpecificReason <- Calidatatopics.SpecificReason %>%
+  group_by(topic) %>%
+  top_n(15,beta) %>%
+  ungroup() %>%
+  arrange(topic,-beta)
+Calidatatopics.SpecificReason %>%
+  mutate(term = reorder(term,beta)) %>%
+  ggplot(aes(term,beta,fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic,scales = "free") +
+  labs(subtitle = "Was there anything specific that made you decide you wanted to 
+go to or return to college before you enrolled in your competency-based education program?
+       ") +
+  coord_flip()
+```
+<br>
+Right away, we see that nearly every topic has *degre* (which is the stemmed version of the word *degree*) as a top term contributing to each topic. Additionally, it seems that a person's career/job seem to play a large role in contributing to topic 1 while time-centric words like "current" and "time" rank high in topic 3. Realistically, it appears that the LDA model did not find 5 unique topics for this particular question. We can derive that most respondents mentioned their degree, career, and time as specific reasons for why they enrolled in college prior to starting a CBE program.  
+
+<br>
+Next, we examine the question *Where did you begin your search to start or return to college?*.
+
+```{r beginsearch ,echo=FALSE,message=FALSE,fig.height=11, fig.width=8 }
+words.tdm.BeginSearch <- cast_tdm(Calidata.tokenized %>%
+                                       count(Question,word_stem,sort=TRUE)%>%
+                                       ungroup() %>%
+                                       filter(Question=="BeginSearch") %>%
+                                       na.omit()
+                                     #filter(!word %in% c("instructor","class","students"))
+                                     ,Question,word_stem,n)
+
+wordslda.BeginSearch <- LDA(words.tdm.BeginSearch,k = 5,control = list(seed = 1))
+Calidatatopics.BeginSearch <- tidy(wordslda.BeginSearch,matrix = "beta") #convert topic model results to dataframe
+
+Calidatatopics.BeginSearch <- Calidatatopics.BeginSearch %>%
+  group_by(topic) %>%
+  top_n(15,beta) %>%
+  ungroup() %>%
+  arrange(topic,-beta)
+Calidatatopics.BeginSearch %>%
+  mutate(term = reorder(term,beta)) %>%
+  ggplot(aes(term,beta,fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic,scales = "free") +
+  labs(subtitle = "Where did you begin your search to start or return to college?
+       ") +
+  coord_flip()
+```
+<br>
+The first two topics contain terms with relatively high beta values and are interrelated. Students appear to begin their search online and, in topic 1, appear to relate to nonprofit universities. Topic 4 presents 'local' and 'colleg' as terms, perhaps indicating students began their search at a local university rather than online. 
+<br>
+
+How about the *type of information students looked for in the process?*.
+```{r typeofinformation ,echo=FALSE,message=FALSE,fig.height=11, fig.width=8 }
+words.tdm.TypeofInformation <- cast_tdm(Calidata.tokenized %>%
+                                       count(Question,word_stem,sort=TRUE)%>%
+                                       ungroup() %>%
+                                       filter(Question=="TypeofInformation") %>%
+                                       na.omit()
+                                     #filter(!word %in% c("instructor","class","students"))
+                                     ,Question,word_stem,n)
+
+wordslda.TypeofInformation <- LDA(words.tdm.TypeofInformation,k = 5,control = list(seed = 1))
+Calidatatopics.TypeofInformation <- tidy(wordslda.TypeofInformation,matrix = "beta") #convert topic model results to dataframe
+
+Calidatatopics.TypeofInformation <- Calidatatopics.TypeofInformation %>%
+  group_by(topic) %>%
+  top_n(15,beta) %>%
+  ungroup() %>%
+  arrange(topic,-beta)
+Calidatatopics.TypeofInformation %>%
+  mutate(term = reorder(term,beta)) %>%
+  ggplot(aes(term,beta,fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic,scales = "free") +
+  labs(subtitle = "What type(s) of information did you look for in this process?
+       ") +
+  coord_flip()
+```
+<br>
+This question presents well with the LDA model. As one may expect, cost ranks near the top of every single derived topic. Topic 1 is focused on the cost of the program as well as the time it takes in the program. Topic 2 primarily focuses on the pace of the online CBE programs, while topic 3 mentions the requirements of online programs in addition to the cost. Topic 4 can be interpreted as focusing on the credit a student will receive within these programs as well as the cost. Finally, topic 5 mentions the flexibility of a program, not necessarily one that is online.
+<br>
+
+The next question we will be reviewing is *Who, if anyone, was involved in this search process with you?*.
+```{r whoinvolved,echo=FALSE,message=FALSE,fig.height=11, fig.width=8  }
+words.tdm.WhoInvolved <- cast_tdm(Calidata.tokenized %>%
+                                          count(Question,word_stem,sort=TRUE)%>%
+                                          ungroup() %>%
+                                          filter(Question=="WhoInvolved") %>%
+                                          na.omit()
+                                        #filter(!word %in% c("instructor","class","students"))
+                                        ,Question,word_stem,n)
+
+wordslda.WhoInvolved <- LDA(words.tdm.WhoInvolved,k = 5,control = list(seed = 1))
+Calidatatopics.WhoInvolved <- tidy(wordslda.WhoInvolved,matrix = "beta") #convert topic model results to dataframe
+
+Calidatatopics.WhoInvolved <- Calidatatopics.WhoInvolved %>%
+  group_by(topic) %>%
+  top_n(15,beta) %>%
+  ungroup() %>%
+  arrange(topic,-beta)
+Calidatatopics.WhoInvolved %>%
+  mutate(term = reorder(term,beta)) %>%
+  ggplot(aes(term,beta,fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic,scales = "free") +
+  labs(subtitle = "Who, if anyone, was involved in this search process with you?
+       ") +
+  coord_flip()
+```
+<br>
+It appears many of our students had "no" help from anyone in their search process. Topic 1 can be seen as corresponding to nobody helping them. Topic 2 seems to show that a spouse (in this case, a husband) attended a nonprofit university. Topic 3 shows a friend may have helped research or is possibly in the same program at NonprofitU. Topic 4 is primarily focused on the friend, while topic 5 seems to feature the wife as a primary source of help.
+<br>
+
+Next is *Please share why you chose the program you are currently enrolled in.*.
+
+```{r programchoice, echo=FALSE,message=FALSE,fig.height=11,fig.width=8}
+words.tdm.ProgramChoice <- cast_tdm(Calidata.tokenized %>%
+                                       count(Question,word_stem,sort=TRUE)%>%
+                                       ungroup() %>%
+                                       filter(Question=="ProgramChoice") %>%
+                                       na.omit()
+                                     #filter(!word %in% c("instructor","class","students"))
+                                     ,Question,word_stem,n)
+
+wordslda.ProgramChoice <- LDA(words.tdm.ProgramChoice,k = 5,control = list(seed = 1))
+Calidatatopics.ProgramChoice <- tidy(wordslda.ProgramChoice,matrix = "beta") #convert topic model results to dataframe
+
+Calidatatopics.ProgramChoice <- Calidatatopics.ProgramChoice %>%
+  group_by(topic) %>%
+  top_n(15,beta) %>%
+  ungroup() %>%
+  arrange(topic,-beta)
+Calidatatopics.ProgramChoice %>%
+  mutate(term = reorder(term,beta)) %>%
+  ggplot(aes(term,beta,fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic,scales = "free") +
+  labs(subtitle = "Please share why you chose the program you are currently enrolled in.
+       ") +
+  coord_flip()
+```
+<br>
+Ironically, the question with the highest count of words does not produce clear topics. Topic 1 focuses on the time of the program/degree at the particular school, while topic 2 addresses the cost and possibly the teachers. Topic 3 does not stand out with anything unique. Topic 4 is interesting as it correlates to wanting to take a program online because of the pace and the schedule of the student. Topic 5 does not offer much.
+<br>
+
+Lastly, we are going to cover responses to *Which of your skills or experience were most helpful in preparing you for this educational experience? Explain.*.
+
+```{r helpfulskills, echo=FALSE,message=FALSE,fig.height=11,fig.width=8}
+words.tdm.HelpfulSkills <- cast_tdm(Calidata.tokenized %>%
+                                       count(Question,word_stem,sort=TRUE)%>%
+                                       ungroup() %>%
+                                       filter(Question=="HelpfulSkills") %>%
+                                       na.omit()
+                                     #filter(!word %in% c("instructor","class","students"))
+                                     ,Question,word_stem,n)
+
+wordslda.HelpfulSkills <- LDA(words.tdm.HelpfulSkills,k = 5,control = list(seed = 1))
+Calidatatopics.HelpfulSkills <- tidy(wordslda.HelpfulSkills,matrix = "beta") #convert topic model results to dataframe
+
+Calidatatopics.HelpfulSkills <- Calidatatopics.HelpfulSkills %>%
+  group_by(topic) %>%
+  top_n(15,beta) %>%
+  ungroup() %>%
+  arrange(topic,-beta)
+Calidatatopics.HelpfulSkills %>%
+  mutate(term = reorder(term,beta)) %>%
+  ggplot(aes(term,beta,fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic,scales = "free") +
+  labs(subtitle = "Which of your skills or experience were most helpful in preparing you for this educational experience? Explain.
+       ") +
+  coord_flip()
+```
+<br>
+
+It appears that a person's experience plays a roll in nearly every topic for this question. Topic 1 revolves around how a person's experience may have helped motivate them, while topic 2 focuses on how learning helped them. Topic 3 seems primarily focused on just the experience. Topic 4 does not deal with experience, but is related to their specific field. Topic 4's betas are relatively low, but they seem to focus on education, knowledge, and children. In other words, topic 4 could relate to the teaching profession. Topic 5 is explicitly related to the experience in their field over time.
+
+
+
+
+
+
