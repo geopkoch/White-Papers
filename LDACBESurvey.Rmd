@@ -27,7 +27,7 @@ tokenize <- function(df, column){
   df
 }
 
-Calidata <- read.csv("P:/APUS_Corporate/Institutional Research/Data Team/Projects/Cali Morrison Topic Modeling/Copy of OpenEndedAnonymized 5-24-17.csv")
+Calidata <- read.csv("DIRECTORY")
 Calidata[,3:8] <- sapply(Calidata[,3:8],as.character)
 
 Calidata.SchoolCounts <- Calidata %>%
