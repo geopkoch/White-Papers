@@ -9,7 +9,7 @@
 #################################################################################
 
 
-source("P:/APUS_Corporate/Institutional Research/Data Team/Scripts/Common Code/R Scripts/Functions.R")
+source("DIRECTORY")
 if (!require("pacman")) install.packages("pacman")
 p_load(dplyr,magrittr,tidyr,readr,stringr,RODBC,ggplot2,data.table,broom,dummies,purrr,janitor,oddsratio,pander)
 
