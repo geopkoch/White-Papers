@@ -1,15 +1,24 @@
+#                                                                               
+#                          PBHE Forum Post Pilot                           
+#                                                                               
+# Purpose: Measuring Forum Engagement 
+# Created by: Geoff Koch                                                        
+# Created on: 7/26/2019                                                 
+# Validated by: Justin Nicewarner                                              
+# Validated on: 8/14/2019                                      
+#################################################################################
 
 
-source("INTERNAL PATH")
+source("INTERNAL FUNCTIONS PATH")
 if (!require("pacman")) install.packages("pacman")
-p_load(dplyr,readr,tidyr,data.table,broom,dummies,purrr,RODBC,dbplyr,stringdist,quanteda)
+p_load(dplyr,readr,tidyr,data.table,broom,dummies,purrr,RODBC,dbplyr,stringdist,quanteda,effsize)
 
 mypath <- "INTERNAL PATH"
 
 note_that("QueryData_begin")
 mydata.master <- queryDB(paste0(mypath,"/PBHE Forum Post Analysis.sql"),
                   cache = "mydata.master",
-                  odbc = "APUS_DW")
+                  odbc = "ODBC NAME")
 note_that("QueryData_end")
 
 mydata <- mydata.master %>%
@@ -29,7 +38,8 @@ mysessions <- head(mydata %>% select(sesnstdt) %>% unique() %>% arrange(sesnstdt
 
 mydata <- mydata %>%
   filter(SakaiThrdScrubbedBody != "") %>%
-  filter(SakaiThrdScrubbedBody != "NA")
+  filter(SakaiThrdScrubbedBody != "NA") %>%
+  filter(SakaiThrdScrubbedBodyWordCnt > 0)
 
 
 note_that("Readablity_begin")
@@ -76,12 +86,10 @@ mydata.satisfaction <- mydata.final %>%
   unique()
 
 t.test(class_satisfaction ~ isNoReqSection , data = mydata.satisfaction)
+cohen.d(mydata.satisfaction$class_satisfaction ~ mydata.satisfaction$isNoReqSection)
+
 t.test(design_satisfaction ~ isNoReqSection , data = mydata.satisfaction)
-
-do.cohen.d(mydata.satisfaction %>% filter(isNoReqSection == 1),
-           mydata.satisfaction %>% filter(isNoReqSection == 0),
-           5,5)
-
+cohen.d(mydata.satisfaction$design_satisfaction ~ mydata.satisfaction$isNoReqSection)
 
 
 #Posts per student in course by post type
@@ -95,12 +103,41 @@ mydata.posts <- mydata.final %>%
 
 
 #run tests to determine if posts per students in course by post type truly differ across treatment groups
-mydata.posts %>% 
+ mydata.posts %>% 
   nest(-LatestCrseNbr,-PostType ) %>%
   mutate(test = map(data, ~ t.test(posts ~ isNoReqSection , data = .)),
        results = map(test, tidy)) %>%
-  unnest(results)
+  unnest(results) %>%
+  select(-data,-test)
+ 
+mydata.pbhe605 <- mydata.posts %>%
+  filter(LatestCrseNbr == "PBHE605",
+         PostType == "tertiary_reply")
 
+cohen.d(mydata.pbhe605$posts ~ mydata.pbhe605$isNoReqSection)
+
+mydata.pbhe605 <- mydata.posts %>%
+  filter(LatestCrseNbr == "PBHE605",
+         PostType == "initial_reply")
+
+cohen.d(mydata.pbhe605$posts ~ mydata.pbhe605$isNoReqSection)
+
+
+ #run tests to determine if word length for posts is actually different
+ mydata.words <- mydata.final %>%
+   filter(sesnstdt %in% mysessions$sesnstdt,
+          grepl("^[0-9]+$", SakaiThrdCrtdBy, perl = T) == TRUE) %>% #only want students - anything that has alpha characters returns FALSE
+   select(LatestCrseNbr,isNoReqSection,SakaiThrdID,PostType, SakaiThrdScrubbedBodyWordCnt) 
+ 
+ wordcounts.test <- mydata.words %>%
+   nest(-LatestCrseNbr,-PostType) %>%
+   mutate(test = map(data, ~ t.test(SakaiThrdScrubbedBodyWordCnt ~ isNoReqSection , data = .)),
+          results = map(test, tidy)) %>%
+   unnest(results) %>%
+   select(-data,-test)
+
+
+ 
 #run tests to determine if various measures across treatment groups and post types are different
 mydata.quality <- mydata.final %>%
   filter(sesnstdt %in% mysessions$sesnstdt,
@@ -116,20 +153,11 @@ qualitytests <- mydata.quality %>%
   nest() %>%
   spread(isNoReqSection,data) %>%
   mutate(t_test = map2(`0`,`1`, ~{tidy(t.test(.x$value,.y$value))})) %>%
-  unnest(t_test)
+  unnest(t_test) %>%
+  select(-`0`,-`1`)
 
 
-#run tests to determine if word length for posts is actually different
-mydata.words <- mydata.final %>%
-  filter(sesnstdt %in% mysessions$sesnstdt,
-         grepl("^[0-9]+$", SakaiThrdCrtdBy, perl = T) == TRUE) %>% #only want students - anything that has alpha characters returns FALSE
-  select(LatestCrseNbr,isNoReqSection,SakaiThrdID,PostType, SakaiThrdScrubbedBodyWordCnt) 
-
-wordcounts.test <- mydata.words %>%
-  nest(-LatestCrseNbr,-PostType) %>%
-  mutate(test = map(data, ~ t.test(SakaiThrdScrubbedBodyWordCnt ~ isNoReqSection , data = .)),
-         results = map(test, tidy)) %>%
-  unnest(results) %>%
-  select(-data,-test)
 #estimate 2 is the pilot group
   
+fwrite(qualitytests,paste0(mypath,"/qualitytests.csv"))
+fwrite(wordcounts.test,paste0(mypath,"/wordcountstest.csv"))
