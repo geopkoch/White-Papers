@@ -1,2 +1,2 @@
 # White-Papers
-Report for white paper script transparency.
+Repository for white paper script transparency.
